@@ -1,0 +1,812 @@
+import numpy as np
+import itertools
+from itertools import permutations
+import copy
+import matplotlib.pyplot as plt
+import time
+
+p0 = time.process_time()
+
+# Parameters
+
+# Parameters for products
+I = [0, 1]  # Set of products
+D = [20, 40]  # Due date for each product
+W = [2, 1]  # Penalty of unit time tardiness for each product
+
+# Parameters for operations
+OP = [0, 1]  # Set of operations
+MG = [[[1, 0], [1, 0, 1]],
+      [[0, 1], [0, 1, 1]]]
+
+# Parameters for part variants
+V = [0, 1]  # Set of part variants
+# Transfer time for moving a WIP belonging to each part variant in unit distance
+FT = [1, 3]
+# Transfer cost for moving a WIP belonging to each part variant in unit distance
+FC = [2, 4]
+# Holding cost for holding a WIP belonging to each part variant in unit time
+HC = [0.5, 0.6]
+# Energy consumption for moving a WIP belonging to each part variant in unit
+# distance
+EF = [8, 7]
+# Set of operations for each part variant
+VP = [[0, 1],
+      [0, 1]]
+
+# Parameters for part variants-operations
+# Set of operations precedent to each operation in processing each part variant
+K = [[[], [0]],
+     [[], []]]
+# Time for each operation in processing each part variant on the corresponding
+# machine and configuration pair
+PT = [[[[2, 0], [4, 0, 6]],
+       [[0, 8], [0, 6, 4]]],
+      [[[2, 0], [6, 0, 4]],
+       [[0, 2], [0, 8, 4]]]]
+# Cost for each operation in processing each part variant on the corresponding
+# machine and configuration pair
+PC = [[[[9, 0], [7, 0, 5]],
+       [[0, 3], [0, 1, 3]]],
+      [[[5, 0], [7, 0, 9]],
+       [[0, 7], [0, 5, 3]]]]
+# Energy consumption for performing each operation in processing each part
+# variant on the corresponding machine and configuration pair
+EP = [[[[6, 0], [5, 0, 6]],
+       [[0, 7], [0, 5, 6]]],
+      [[[5, 0], [7, 0, 6]],
+       [[0, 5], [0, 7, 5]]]]
+# Hazardous waste emitted for performing each operation in processing each part
+# variant on the corresponding machine and configuration pair
+HW = [[[[3, 0], [3, 0, 3]],
+       [[0, 9], [0, 8, 7]]],
+      [[[8, 0], [7, 0, 6]],
+       [[0, 6], [0, 8, 5]]]]
+# Setup time for each operation in processing each part variant on the
+# corresponding machine and configuration pair
+ST = [[[[3, 0], [4, 0, 2]],
+       [[0, 4], [0, 3, 5]]],
+      [[[5, 0], [3, 0, 4]],
+       [[0, 4], [0, 4, 5]]]]
+# Setup cost for each operation in processing each part variant on the
+# corresponding machine and configuration pair
+SC = [[[[8, 0], [6, 0, 7]],
+       [[0, 9], [0, 8, 7]]],
+      [[[9, 0], [9, 0, 9]],
+       [[0, 7], [0, 9, 8]]]]
+# Energy consumption for setup each operation in processing each part
+# variant on the corresponding machine and configuration pair
+ES = [[[[3, 0], [2, 0, 1]],
+       [[0, 5], [0, 4, 6]]],
+      [[[5, 0], [3, 0, 4]],
+       [[0, 6], [0, 4, 5]]]]
+
+# Parameters for products-part variants
+J = [[1, 0],
+     [0, 1]]  # Number of each part variant in each product
+
+# Parameters for workshop
+BX = 9
+BY = 7
+
+# Parameters for machines
+M = [0, 1]  # Number of machines
+LT = [4, 3]  # Layout time for moving each machine in unit distance
+LC = [1, 2]  # Layout cost for moving each machine in unit distance
+EL = [4, 5]  # Energy consumption for moving each machine in unit distance
+X = [2, 6]  # Initial location for each machine on the X-coordinate
+Y = [5, 2]  # Initial location for each machine on the Y-coordinate
+SX = [1, 2]  # Security distance for each machine on the X-coordinate
+SY = [1, 1]  # Security distance for each machine on the Y-coordinate
+
+OP0 = [1, 0]  # Initial operation processed on each machine
+V0 = [1, 0]  # Initial WIP belonging to part variant processed on each machine
+# Remaining processing time for the current operation on each machine
+A0 = [9, 1]
+
+# Parameters for configurations
+G = [2, 3]  # Number of configurations on each machine
+G0 = [1, 1]  # Initial configuration on each machine
+# Reconfiguration time between configurations on each machine
+RT = [[[0, 1], [3, 0]],
+      [[0, 5, 7], [9, 0, 7], [5, 3, 0]]]
+# Reconfiguration cost between configurations on each machine
+RC = [[[0, 2], [4, 0]],
+      [[0, 6, 8], [6, 0, 4], [2, 4, 0]]]
+# Energy consumption of reconfiguration between configurations on each machine
+ER = [[[0, 3], [5, 0]],
+      [[0, 4, 2], [6, 0, 8], [7, 9, 0]]]
+# Limit of hazardous waste
+UHW = 2
+# Emission factor for energy consumption
+f = 2
+# Limit of GHG emission
+UGE = 10
+
+# total operations
+opn = 0
+for i in I:
+    for v in V:
+        if J[i][v] != 0:
+            for j in range(J[i][v]):
+                opn = opn + len(VP[v])
+
+# Feasible operation sequences for part variants
+qv = [[] for v in V]
+for v in V:
+    for item in itertools.permutations(VP[v]):
+        for q in item:
+            if K[v][q]:
+                if not set(K[v][q]).issubset(set(
+                        list(item)[:list(item).index(q)])):
+                    break
+        else:
+            qv[v].append(list(item))
+
+# Feasible machine and configuration pairs for each operation
+mg = [[] for e in OP]
+for e in OP:
+    for m in M:
+        for g in range(G[m]):
+            if MG[e][m][g] == 1:
+                mg[e].append([m, g])
+
+
+# Feasible process plan for each part variant
+class pmg:
+
+    def __init__(self, v):
+        self.p = []
+        self.m = []
+        self.g = []
+        self.v = v
+        for s in qv[v]:
+            if len(s) == 1:
+                for c in mg[s[0]]:
+                    self.p.append(s)
+                    self.m.append(c[0])
+                    self.g.append(c[1])
+            elif len(s) == 2:
+                for item in itertools.product(mg[s[0]], mg[s[1]]):
+                    self.p.append(s)
+                    tm = []
+                    tg = []
+                    for c in item:
+                        tm.append(c[0])
+                        tg.append(c[1])
+                    self.m.append(tm)
+                    self.g.append(tg)
+            else:
+                ts = [list(item) for item in
+                      itertools.product(mg[s[0]], mg[s[1]])]
+                for q in range(2, len(s)):
+                    tmp = [list(item) for item in
+                           itertools.product(ts, mg[s[q]])]
+                    ts.clear()
+                    for item in tmp:
+                        new = copy.deepcopy(item[0])
+                        new.append(item[1])
+                        ts.append(new)
+                for cs in ts:
+                    self.p.append(s)
+                    tm = []
+                    tg = []
+                    for c in cs:
+                        tm.append(c[0])
+                        tg.append(c[1])
+                    self.m.append(tm)
+                    self.g.append(tg)
+
+
+fpv = []
+for v in V:
+    fpv.append(pmg(v))
+
+
+# Feasible process planning for job sequence
+class pp:
+
+    def __init__(self, js):
+        self.jp = []
+        self.jm = []
+        self.jg = []
+        if len(js) == 1:
+            jv = fpv[js[0][1]]
+            self.jp = jv.p
+            self.jm = jv.m
+            self.jg = jv.g
+        elif len(js) == 2:
+            jv = [fpv[js[0][1]], fpv[js[1][1]]]
+            for item in itertools.product(range(len(jv[0].p)),
+                                          range(len(jv[1].p))):
+                self.jp.append([jv[0].p[item[0]], jv[1].p[item[1]]])
+                self.jm.append([jv[0].m[item[0]], jv[1].m[item[1]]])
+                self.jg.append([jv[0].g[item[0]], jv[1].g[item[1]]])
+        else:
+            jv = [fpv[js[j][1]] for j in range(len(js))]
+            tp = [list(item) for item in itertools.product(
+                range(len(jv[0].p)), range(len(jv[1].p)))]
+            for j in range(2, len(js)):
+                tmp = [list(item) for item in
+                       itertools.product(tp, range(len(jv[j].p)))]
+                tp.clear()
+                for item in tmp:
+                    new = copy.deepcopy(item[0])
+                    new.append(item[1])
+                    tp.append(new)
+            for i in tp:
+                nwp = []
+                nwm = []
+                nwg = []
+                for j in range(len(js)):
+                    nwp.append(jv[j].p[i[j]])
+                    nwm.append(jv[j].m[i[j]])
+                    nwg.append(jv[j].g[i[j]])
+                self.jp.append(nwp)
+                self.jm.append(nwm)
+                self.jg.append(nwg)
+
+
+jb = []
+for i in I:
+    for v in V:
+        if J[i][v] != 0:
+            for j in range(J[i][v]):
+                jb.append([i, v, j])
+
+fpp = pp(jb)
+
+# Feasible machine position
+opm = [[] for m in M]
+for m in M:
+    x = list(range(SX[m], BX - SX[m] + 1))
+    y = list(range(SY[m], BY - SY[m] + 1))
+    for item in itertools.product(x, y):
+        opm[m].append(item)
+
+
+class slt:
+
+    def product_completion_time(self):
+        # Calculate the completion time for each product
+        T = []
+        for i in I:
+            temp = []
+            for v in V:
+                if J[i][v] != 0:
+                    temp.append(max(self.beta[i][v][j][- 1] +
+                                    PT[v][self.rho[i][v][j][- 1]][
+                                        self.alpha[i][v][j][- 1]][
+                                        self.phi[i][v][j][- 1]]
+                                    for j in range(J[i][v])))
+                else:
+                    temp.append(0)
+            T.append(max(temp))
+        return T
+
+    def unit_sus(self):
+        # Calculate the hazardous waste and gases emission per time unit
+        C = self.product_completion_time()
+        c_max = max(C)
+        self.LHW = UHW * c_max
+        self.L_GHG = UGE * c_max
+        return self.LHW, self.L_GHG
+
+    # Objective functions
+    # First objective function.
+
+    def function1(self):
+        # Calculate the tardiness for each product
+        C = self.product_completion_time()
+        # Calculate the penalty for tardiness
+        value = sum(max(0, C[i] - D[i]) * W[i] for i in I)
+        return value
+
+    # Second objective function.
+
+    def function2(self):
+        value = self.tlc + self.tpc + self.tfc + self.trc + self.tsc + \
+                self.thc
+        return value
+
+    # Third objective function.
+
+    def function3(self):
+        self.LHW, self.L_GHG = self.unit_sus()
+        value = self.THW / self.LHW + self.E_GHG / self.L_GHG
+        return value
+
+    def __init__(self, slt_rho, slt_alpha, slt_phi, slt_x, slt_y, slt_beta,
+                 slt_tlc, slt_tpc, slt_tfc, slt_trc, slt_tsc, slt_thc, slt_elc,
+                 slt_epc, slt_efc, slt_erc, slt_esc, slt_thw):
+        self.rho = slt_rho
+        self.alpha = slt_alpha
+        self.phi = slt_phi
+        self.x = slt_x
+        self.y = slt_y
+        self.beta = slt_beta
+        self.f1 = self.function1()
+        self.tlc = slt_tlc
+        self.tpc = slt_tpc
+        self.tfc = slt_tfc
+        self.trc = slt_trc
+        self.tsc = slt_tsc
+        self.thc = slt_thc
+        self.f2 = self.function2()
+        self.ELC = slt_elc
+        self.EPC = slt_epc
+        self.EFC = slt_efc
+        self.ERC = slt_erc
+        self.ESC = slt_esc
+        self.E_ttl = self.ESC + self.EPC + self.EFC + self.ERC + self.ELC
+        self.E_GHG = self.E_ttl * f
+        self.THW = slt_thw
+        self.LHW = 0
+        self.L_GHG = 0
+        self.LHW, self.L_GHG = self.unit_sus()
+        self.f3 = self.function3()
+        if self.THW <= self.LHW and self.E_GHG <= self.L_GHG:
+            self.f = 1
+        else:
+            self.f = 0
+
+
+class pp_slt:
+
+    def __init__(self, rho, alpha, phi):
+        self.ps_slt = []
+        tpc = 0
+        EPC = 0
+        THW = 0
+        for i in I:
+            for v in V:
+                if J[i][v] != 0:
+                    for j in range(J[i][v]):
+                        for q in range(len(VP[v])):
+                            tpc = tpc + PC[v][rho[i][v][j][q]][
+                                alpha[i][v][j][q]][phi[i][v][j][q]]
+                            EPC = EPC + EP[v][rho[i][v][j][q]][
+                                alpha[i][v][j][q]][phi[i][v][j][q]]
+                            THW = THW + HW[v][rho[i][v][j][q]][
+                                alpha[i][v][j][q]][phi[i][v][j][q]]
+        mes = [[] for m in M]
+        mgs = [[] for m in M]
+        mis = [[] for m in M]
+        mvs = [[] for m in M]
+        mjs = [[] for m in M]
+        mqs = [[] for m in M]
+        for i in I:
+            for v in V:
+                if J[i][v] != 0:
+                    for j in range(J[i][v]):
+                        for q in range(len(VP[v])):
+                            mes[alpha[i][v][j][q]].append(rho[i][v][j][q])
+                            mgs[alpha[i][v][j][q]].append(phi[i][v][j][q])
+                            mis[alpha[i][v][j][q]].append(i)
+                            mvs[alpha[i][v][j][q]].append(v)
+                            mjs[alpha[i][v][j][q]].append(j)
+                            mqs[alpha[i][v][j][q]].append(q)
+        f_mes = [[] for m in M]
+        f_mgs = [[] for m in M]
+        f_mis = [[] for m in M]
+        f_mvs = [[] for m in M]
+        f_mjs = [[] for m in M]
+        f_mqs = [[] for m in M]
+        for m in M:
+            if len(mes[m]) > 0:
+                for item in permutations([i for i in range(len(mes[m]))]):
+                    temp_mes = np.array(mes[m])[list(item)]
+                    temp_mgs = np.array(mgs[m])[list(item)]
+                    temp_mis = np.array(mis[m])[list(item)]
+                    temp_mvs = np.array(mvs[m])[list(item)]
+                    temp_mjs = np.array(mjs[m])[list(item)]
+                    temp_mqs = np.array(mqs[m])[list(item)]
+                    jdg = 1
+                    for k in range(len(mes[m])):
+                        for k_ in range(k):
+                            if temp_mis[k] == temp_mis[k_] and \
+                                    temp_mvs[k] == temp_mvs[k_] and \
+                                    temp_mjs[k] == temp_mjs[k_]:
+                                if temp_mqs[k] < temp_mqs[k_]:
+                                    jdg = 0
+                    if jdg == 1:
+                        f_mes[m].append(temp_mes)
+                        f_mgs[m].append(temp_mgs)
+                        f_mis[m].append(temp_mis)
+                        f_mvs[m].append(temp_mvs)
+                        f_mjs[m].append(temp_mjs)
+                        f_mqs[m].append(temp_mqs)
+        mw = []
+        for m in M:
+            if f_mes[m]:
+                mw.append(m)
+        if len(mw) == 1:
+            m = mw[0]
+            x = [[[[X[alpha[i][v][j][q]] for q in range(len(VP[v]))]
+                   for j in range(J[i][v])] for v in V] for i in I]
+            y = [[[[Y[alpha[i][v][j][q]] for q in range(len(VP[v]))]
+                   for j in range(J[i][v])] for v in V] for i in I]
+            tlc = 0
+            ELC = 0
+            tfc = 0
+            EFC = 0
+            thc = 0
+            for xs in range(len(f_mes[m])):
+                trc = 0
+                tsc = 0
+                ERC = 0
+                ESC = 0
+                beta = [[[[0 for q in range(len(VP[v]))] for j in
+                          range(J[i][v])] for v in V] for i in I]
+                tt = A0[m]
+                ce = OP0[m]
+                cg = G0[m]
+                cv = V0[m]
+                for xe in range(len(f_mes[m][xs])):
+                    te = f_mes[m][xs][xe]
+                    tg = f_mgs[m][xs][xe]
+                    ti = f_mis[m][xs][xe]
+                    tv = f_mvs[m][xs][xe]
+                    tj = f_mjs[m][xs][xe]
+                    tq = f_mqs[m][xs][xe]
+                    if tt == A0[m]:
+                        if cv == tv and ce == te and cg == tg:
+                            beta[ti][tv][tj][tq] = A0[m]
+                        else:
+                            beta[ti][tv][tj][tq] = A0[m] + RT[m][G0[m]][tg] + \
+                                                   ST[tv][te][m][tg]
+                            tsc = SC[tv][te][m][tg]
+                            ESC = ES[tv][te][m][tg]
+                    else:
+                        if cg == tg:
+                            rt = 0
+                            rc = 0
+                            erc = 0
+                        else:
+                            rt = RT[m][cg][tg]
+                            rc = RC[m][cg][tg]
+                            erc = ER[m][cg][tg]
+                        if cv == tv and ce == te and cg == tg:
+                            st = 0
+                            sc = 0
+                            esc = 0
+                        else:
+                            st = ST[tv][te][m][tg]
+                            sc = SC[tv][te][m][tg]
+                            esc = ES[tv][te][m][tg]
+                        beta[ti][tv][tj][tq] = tt + rt + st
+                        trc = trc + rc
+                        tsc = tsc + sc
+                        ERC = ERC + erc
+                        ESC = ESC + esc
+                    tt = beta[ti][tv][tj][tq] + PT[tv][te][m][tg]
+                    ce = te
+                    cg = tg
+                    cv = tv
+                ns = slt(rho, alpha, phi, x, y, beta, tlc, tpc, tfc, trc, tsc,
+                         thc, ELC, EPC, EFC, ERC, ESC, THW)
+                if ns.f == 1:
+                    self.ps_slt.append(ns)
+        elif len(mw) == 2:
+            fi = []
+            fv = []
+            fj = []
+            fq = []
+            fm = []
+            for i in I:
+                for v in V:
+                    if J[i][v] != 0:
+                        for j in range(J[i][v]):
+                            for q in range(len(VP[v])):
+                                fi.append(i)
+                                fv.append(v)
+                                fj.append(j)
+                                fq.append(q)
+                                fm.append(opm[alpha[i][v][j][q]])
+            a = [0 for op in range(opn)]
+            while a != [len(fm[op]) - 1 for op in range(opn)]:
+                act = 0
+                idx = opn - 1
+                while act == 0:
+                    if a[idx] < len(fm[idx]) - 1:
+                        a[idx] = a[idx] + 1
+                        act = 1
+                    else:
+                        a[idx] = 0
+                        idx = idx - 1
+                x = [[[[0 for q in range(len(VP[v]))] for j in
+                       range(J[i][v])] for v in V] for i in I]
+                y = [[[[0 for q in range(len(VP[v]))] for j in
+                       range(J[i][v])] for v in V] for i in I]
+                for op in range(opn):
+                    x[fi[op]][fv[op]][fj[op]][fq[op]] = fm[op][a[op]][0]
+                    y[fi[op]][fv[op]][fj[op]][fq[op]] = fm[op][a[op]][1]
+                for xs in itertools.product(range(len(f_mes[0])),
+                                            range(len(f_mes[1]))):
+                    tlc = 0
+                    ELC = 0
+                    tfc = 0
+                    EFC = 0
+                    thc = 0
+                    trc = 0
+                    tsc = 0
+                    thc = 0
+                    ERC = 0
+                    ESC = 0
+                    beta = [[[[0 for q in range(len(VP[v]))] for j in
+                              range(J[i][v])] for v in V] for i in I]
+                    px = copy.deepcopy(X)
+                    py = copy.deepcopy(Y)
+                    tt = copy.deepcopy(A0)
+                    ce = copy.deepcopy(OP0)
+                    cg = copy.deepcopy(G0)
+                    ci = [- 1, -1]
+                    cv = copy.deepcopy(V0)
+                    cj = [- 1, -1]
+                    cq = [- 1, -1]
+                    fn = []
+                    xe = [0, 0]
+                    cnt = 0
+                    for m in M:
+                        if f_mqs[m][xs[m]][0] == 0:
+                            te = f_mes[m][xs[m]][0]
+                            tg = f_mgs[m][xs[m]][0]
+                            ti = f_mis[m][xs[m]][0]
+                            tv = f_mvs[m][xs[m]][0]
+                            tj = f_mjs[m][xs[m]][0]
+                            tq = f_mqs[m][xs[m]][0]
+                            px[m] = x[ti][tv][tj][tq]
+                            py[m] = y[ti][tv][tj][tq]
+                            pf = 1
+                            for u in range(len(M) - 1):
+                                for v in range(u + 1, len(M)):
+                                    if abs(px[v] - px[u]) < SX[v] + SX[u]:
+                                        if abs(py[v] - py[u]) < SY[v] + SY[u]:
+                                            pf = 0
+                            if pf == 0:
+                                break
+                            rt = RT[m][G0[m]][tg]
+                            rc = RC[m][G0[m]][tg]
+                            erc = ER[m][G0[m]][tg]
+                            if cv[m] == tv and ce[m] == te and cg[m] == tg:
+                                st = 0
+                                sc = 0
+                                esc = 0
+                            else:
+                                st = ST[tv][te][m][tg]
+                                sc = SC[tv][te][m][tg]
+                                esc = ES[tv][te][m][tg]
+                            beta[ti][tv][tj][tq] = tt[m] + LT[m] * (
+                                    abs(x[ti][tv][tj][tq] - X[m]) +
+                                    abs(y[ti][tv][tj][tq] - Y[m])) + rt + st
+                            trc = trc + rc
+                            tsc = tsc + sc
+                            ERC = ERC + erc
+                            ESC = ESC + esc
+                            lc = LC[m] * (abs(x[ti][tv][tj][tq] - X[m]) +
+                                          abs(y[ti][tv][tj][tq] - Y[m]))
+                            tlc = tlc + lc
+                            ELC = ELC + EL[m] * (abs(x[ti][tv][tj][tq] - X[m]) +
+                                                 abs(y[ti][tv][tj][tq] - Y[m]))
+                            tt[m] = beta[ti][tv][tj][tq] + PT[tv][te][m][tg]
+                            ce[m] = te
+                            cg[m] = tg
+                            ci[m] = ti
+                            cv[m] = tv
+                            cj[m] = tj
+                            cq[m] = tq
+                            fn.append([ti, tv, tj, tq])
+                            xe[m] = 1
+                            cnt = cnt + 1
+                    else:
+                        m = 0
+                        km = 0
+                        while cnt < opn:
+                            if km == 2:
+                                break
+                            if xe[m] < len(f_mes[m][xs[m]]):
+                                te = f_mes[m][xs[m]][xe[m]]
+                                tg = f_mgs[m][xs[m]][xe[m]]
+                                ti = f_mis[m][xs[m]][xe[m]]
+                                tv = f_mvs[m][xs[m]][xe[m]]
+                                tj = f_mjs[m][xs[m]][xe[m]]
+                                tq = f_mqs[m][xs[m]][xe[m]]
+                                px[m] = x[ti][tv][tj][tq]
+                                py[m] = y[ti][tv][tj][tq]
+                                pf = 1
+                                for u in range(len(M) - 1):
+                                    for v in range(u + 1, len(M)):
+                                        if abs(px[v] - px[u]) < SX[v] + SX[u]:
+                                            if abs(py[v] - py[u]) < \
+                                                    SY[v] + SY[u]:
+                                                pf = 0
+                                if pf == 0:
+                                    break
+                                if tq == 0:
+                                    if cg[m] == tg:
+                                        rt = 0
+                                        rc = 0
+                                        erc = 0
+                                    else:
+                                        rt = RT[m][cg[m]][tg]
+                                        rc = RC[m][cg[m]][tg]
+                                        erc = ER[m][cg[m]][tg]
+                                    if cv[m] == tv and ce[m] == te and \
+                                            cg[m] == tg:
+                                        st = 0
+                                        sc = 0
+                                        esc = 0
+                                    else:
+                                        st = ST[tv][te][m][tg]
+                                        sc = SC[tv][te][m][tg]
+                                        esc = ES[tv][te][m][tg]
+                                    beta[ti][tv][tj][tq] = tt[m] + LT[m] * (abs(
+                                        x[ti][tv][tj][tq] -
+                                        x[ci[m]][cv[m]][cj[m]][cq[m]]) + abs(
+                                        y[ti][tv][tj][tq] -
+                                        y[ci[m]][cv[m]][cj[m]][cq[m]])) + rt \
+                                        + st
+                                    trc = trc + rc
+                                    tsc = tsc + sc
+                                    ERC = ERC + erc
+                                    ESC = ESC + esc
+                                    lc = LC[m] * (abs(x[ti][tv][tj][tq] -
+                                                      x[ci[m]][cv[m]][cj[m]][
+                                                          cq[m]]) +
+                                                  abs(y[ti][tv][tj][tq] -
+                                                      y[ci[m]][cv[m]][cj[m]][
+                                                          cq[m]]))
+                                    tlc = tlc + lc
+                                    ELC = ELC + EL[m] * (
+                                            abs(x[ti][tv][tj][tq] -
+                                                x[ci[m]][cv[m]][cj[m]][cq[m]]) +
+                                            abs(y[ti][tv][tj][tq] -
+                                                y[ci[m]][cv[m]][cj[m]][cq[m]]))
+                                    km = 0
+                                elif [ti, tv, tj, tq - 1] in fn:
+                                    if cg[m] == tg:
+                                        rt = 0
+                                        rc = 0
+                                        erc = 0
+                                    else:
+                                        rt = RT[m][cg[m]][tg]
+                                        rc = RC[m][cg[m]][tg]
+                                        erc = ER[m][cg[m]][tg]
+                                    if cv[m] == tv and ce[m] == te and \
+                                            cg[m] == tg:
+                                        st = 0
+                                        sc = 0
+                                        esc = 0
+                                    else:
+                                        st = ST[tv][te][m][tg]
+                                        sc = SC[tv][te][m][tg]
+                                        esc = ES[tv][te][m][tg]
+                                    if ci[m] == -1:
+                                        tm = tt[m] + LT[m] * (abs(
+                                            x[ti][tv][tj][tq] - X[m]) + abs(
+                                            y[ti][tv][tj][tq] - Y[m])) + rt + st
+                                        lc = LC[m] * (
+                                                abs(x[ti][tv][tj][tq] - X[m]) +
+                                                abs(y[ti][tv][tj][tq] - Y[m]))
+                                        elc = EL[m] * (
+                                                abs(x[ti][tv][tj][tq] - X[m]) +
+                                                abs(y[ti][tv][tj][tq] - Y[m]))
+                                    else:
+                                        tm = tt[m] + LT[m] * (abs(
+                                            x[ti][tv][tj][tq] -
+                                            x[ci[m]][cv[m]][cj[m]][cq[m]]) + abs(
+                                            y[ti][tv][tj][tq] -
+                                            y[ci[m]][cv[m]][cj[m]][cq[m]])) + rt \
+                                            + st
+                                        lc = LC[m] * (
+                                                abs(x[ti][tv][tj][tq] -
+                                                    x[ci[m]][cv[m]][cj[m]][
+                                                        cq[m]]) +
+                                                abs(y[ti][tv][tj][tq] -
+                                                    y[ci[m]][cv[m]][cj[m]][
+                                                        cq[m]]))
+                                        elc = EL[m] * (
+                                                abs(x[ti][tv][tj][tq] -
+                                                    x[ci[m]][cv[m]][cj[m]][
+                                                        cq[m]]) +
+                                                abs(y[ti][tv][tj][tq] -
+                                                    y[ci[m]][cv[m]][cj[m]][
+                                                        cq[m]]))
+                                    tf = beta[ti][tv][tj][tq - 1] + \
+                                        PT[tv][rho[ti][tv][tj][tq - 1]][
+                                               alpha[ti][tv][tj][tq - 1]][
+                                               phi[ti][tv][tj][tq - 1]] + \
+                                        FT[tv] * (abs(x[ti][tv][tj][tq] -
+                                                      x[ti][tv][tj][tq - 1]) +
+                                                  abs(y[ti][tv][tj][tq] -
+                                                      y[ti][tv][tj][tq - 1]))
+                                    th = tm - tf
+                                    if th >= 0:
+                                        beta[ti][tv][tj][tq] = tm
+                                        hc = th * HC[tv]
+                                    else:
+                                        beta[ti][tv][tj][tq] = tf
+                                        hc = 0
+                                    trc = trc + rc
+                                    tsc = tsc + sc
+                                    fc = FC[tv] * (abs(x[ti][tv][tj][tq] -
+                                                       x[ti][tv][tj][tq - 1]) +
+                                                   abs(y[ti][tv][tj][tq] -
+                                                       y[ti][tv][tj][tq - 1]))
+                                    tfc = tfc + fc
+                                    thc = thc + hc
+                                    ERC = ERC + erc
+                                    ESC = ESC + esc
+                                    efc = EF[tv] * (abs(x[ti][tv][tj][tq] -
+                                                        x[ti][tv][tj][tq - 1]) +
+                                                    abs(y[ti][tv][tj][tq] -
+                                                        y[ti][tv][tj][tq - 1]))
+                                    EFC = EFC + efc
+                                    tlc = tlc + lc
+                                    ELC = ELC + elc
+                                    km = 0
+                                else:
+                                    m = m + 1
+                                    if m == 2:
+                                        m = 0
+                                    km = km + 1
+                                    continue
+                                tt[m] = beta[ti][tv][tj][tq] + PT[tv][te][m][tg]
+                                ce[m] = te
+                                cg[m] = tg
+                                ci[m] = ti
+                                cv[m] = tv
+                                cj[m] = tj
+                                cq[m] = tq
+                                fn.append([ti, tv, tj, tq])
+                                xe[m] = xe[m] + 1
+                                cnt = cnt + 1
+                            else:
+                                m = m + 1
+                                if m == 2:
+                                    m = 0
+                                km = km + 1
+                        else:
+                            if km == 2:
+                                continue
+                            ns = slt(rho, alpha, phi, x, y, beta, tlc, tpc, tfc,
+                                     trc, tsc, thc, ELC, EPC, EFC, ERC, ESC,
+                                     THW)
+                            if ns.f == 1:
+                                self.ps_slt.append(ns)
+
+
+# Main program starts here
+ttl_slt = []
+pr = [[[[0 for q in range(len(VP[v]))] for j in range(J[i][v])]
+       for v in V] for i in I]
+pa = [[[[0 for q in range(len(VP[v]))] for j in range(J[i][v])]
+       for v in V] for i in I]
+ph = [[[[0 for q in range(len(VP[v]))] for j in range(J[i][v])]
+       for v in V] for i in I]
+for p in range(len(fpp.jp)):
+    for jd in range(len(jb)):
+        i = jb[jd][0]
+        v = jb[jd][1]
+        j = jb[jd][2]
+        for q in range(len(VP[v])):
+            pr[i][v][j][q] = fpp.jp[p][jd][q]
+            pa[i][v][j][q] = fpp.jm[p][jd][q]
+            ph[i][v][j][q] = fpp.jg[p][jd][q]
+    sp = pp_slt(pr, pa, ph)
+    '''
+    for s in sp.ps_slt:
+        print(s.rho)
+        print(s.alpha)
+        print(s.phi)
+        print('')
+        print(s.x)
+        print(s.y)
+        print(s.beta)
+        print('')
+    
+    temp = copy.deepcopy(sp.pp_slt)
+    ttl_slt.extend(temp)
+    '''
+p1 = time.process_time()
+print(p1 - p0)
