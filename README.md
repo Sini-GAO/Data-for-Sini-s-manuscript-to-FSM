@@ -1,6 +1,6 @@
 # IJPR
 
-Here is the programming document for IJPR manuscript.
+This is the programming document for DOE of small numerical example of Sini's manuscript submitted to IJPR.
 
 It has: 
        (1) NSGA-II code for the small numerical example;
