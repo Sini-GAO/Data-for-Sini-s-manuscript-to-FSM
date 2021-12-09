@@ -2,7 +2,10 @@ import random
 from random import choice
 import numpy as np
 import itertools
+from itertools import permutations
 import copy
+import math
+from scipy.cluster.hierarchy import linkage
 import time
 
 p0 = time.process_time()
@@ -149,7 +152,7 @@ for v in V:
                         list(item)[:list(item).index(q)])):
                     break
         else:
-            qv[v].append(item)
+            qv[v].append(list(item))
 
 # Feasible machine and configuration pairs for each operation
 mg = [[] for e in OP]
@@ -171,11 +174,10 @@ for i in I:
 # Define the decision variables, objective functions and constraints
 
 
-class Individual:
+class Solution:
 
     # Constraints
     def layout_check(self):
-        self.pf = 1
         self.tlc = LC[- 1] * (abs(self.x[- 1] - X[- 1]) +
                               abs(self.y[- 1] - Y[- 1]))
         for m in range(len(M) - 1):
@@ -185,7 +187,7 @@ class Individual:
                 if abs(self.x[m_] - self.x[m]) < SX[m_] + SX[m]:
                     if abs(self.y[m_] - self.y[m]) < SY[m_] + SY[m]:
                         self.pf = 10000
-                        self.tlc = self.tlc + self.pf
+                        self.tlc = self.pf
                         break
             else:
                 continue
@@ -440,8 +442,8 @@ class Individual:
 
     def __init__(self):
         self.pf = 1
-        self.x = [random.randint(SX[m], BX - SX[m]) for m in M]
-        self.y = [random.randint(SY[m], BY - SY[m]) for m in M]
+        self.x = list(X)
+        self.y = list(Y)
         self.tlc = LC[- 1] * (abs(self.x[- 1] - X[- 1]) +
                               abs(self.y[- 1] - Y[- 1]))
         self.pf, self.tlc = self.layout_check()
@@ -469,290 +471,251 @@ class Individual:
         self.f2 = self.function2() * self.pf
 
 
-class Population:
-    size = 40
-    parent = [[], []]
-    F = []
-    V1 = []
-    V2 = []
-    dr = []
-    slc = []
-    cso = []
-    mut = []
-    cd = [[] for i in range(len(dr))]
-    ds = [[] for i in range(len(F))]
+def domination_amount(a, b, r1, r2):
+    if a.f1 != b.f1 and a.f2 != b.f2 and r1 != 0 and r2 != 0:
+        dom = (abs(a.f1 - b.f1) / r1) * (abs(a.f2 - b.f2) / r2)
+    elif a.f1 != b.f1 and a.f2 == b.f2:
+        dom = abs(a.f1 - b.f1) / r1
+    elif a.f1 == b.f1 and a.f2 != b.f2:
+        dom = abs(a.f2 - b.f2) / r2
+    return dom
 
-    def __init__(self):
-        for l in range(self.size):
-            prt = Individual()
-            self.parent[0].append(prt)
 
-    def elitist(self):
-        self.F.clear()
-        self.V1.clear()
-        self.V2.clear()
-        if not self.parent[1]:
-            self.F.extend(self.parent[0])
+def single_linkage_clustering(a):
+    dst = []
+    clt = []
+    tmp_ahv = []
+    for i in range(len(a)):
+        clt.append([a[i]])
+        tmp_ahv.append([a[i]])
+    del_index = []
+    for i in range(len(a) - 1):
+        for j in range(i + 1, len(a)):
+            dst.append(math.sqrt(
+                abs(a[i].f1 - a[j].f1) ** 2 +
+                abs(a[i].f2 - a[j].f2) ** 2))
+    slc = linkage(dst, 'single')
+    for i in range(len(a) - HL):
+        new_clt = []
+        new_clt.extend(clt[int(slc[i][0])])
+        new_clt.extend(clt[int(slc[i][1])])
+        clt.append(new_clt)
+        tmp_ahv.append(new_clt)
+        del_index.append(int(slc[i][0]))
+        del_index.append(int(slc[i][1]))
+    tmp_ahv = [tmp_ahv[i] for i in range(len(tmp_ahv))
+               if i not in del_index]
+    a = []
+    for i in range(len(tmp_ahv)):
+        if len(tmp_ahv[i]) == 1:
+            a.extend(tmp_ahv[i])
         else:
-            self.F.extend(self.parent[0])
-            self.F.extend(self.parent[1])
-        for i in range(len(self.F)):
-            self.V1.append(self.F[i].f1)
-            self.V2.append(self.F[i].f2)
-
-    def fast_non_dominated_sort(self):
-        self.elitist()
-        self.ds = [[] for i in range(len(self.F))]
-        self.dr.clear()
-        v1 = copy.deepcopy(self.V1)
-        v2 = copy.deepcopy(self.V2)
-        for v in range(len(self.F)):
-            for u in range(v + 1, len(self.F)):
-                if v1[u] < v1[v] and v2[u] < v2[v] or v1[u] == v1[v] and \
-                        v2[u] < v2[v] or v1[u] < v1[v] and v2[u] == v2[v]:
-                    self.ds[v].append(u)
-                elif v1[v] < v1[u] and v2[v] < v2[u] or v1[v] == v1[u] and \
-                        v2[v] < v2[u] or v1[v] < v1[u] and v2[v] == v2[u]:
-                    self.ds[u].append(v)
-        ds = copy.deepcopy(self.ds)
-        while ds != [[- 1]] * len(self.F):
-            dr = []
-            for v in range(len(self.F)):
-                if not ds[v]:
-                    dr.append(v)
-                    ds[v].append(- 1)
-            for u in range(len(self.F)):
-                for v in dr:
-                    if v in ds[u]:
-                        ds[u].remove(v)
-            self.dr.append(dr)
-
-    def crowding_distance(self):
-        self.fast_non_dominated_sort()
-        self.cd = [[1.0 for j in range(len(self.dr[i]))] for i in
-                   range(len(self.dr))]
-        drv1 = [[self.V1[self.dr[i][j]] for j in range(len(self.dr[i]))]
-                for i in range(len(self.dr))]
-        drv2 = [[self.V2[self.dr[i][j]] for j in range(len(self.dr[i]))]
-                for i in range(len(self.dr))]
-        for i in range(len(self.dr)):
-            array1 = np.array(drv1[i])
-            array2 = np.array(drv2[i])
-            a_s1 = sorted(array1)
-            a_s2 = sorted(array2)
-            a_i1 = np.argsort(array1)
-            a_i2 = np.argsort(array2)
-            if a_s1[0] != a_s1[- 1]:
-                for j in range(1, len(self.dr[i]) - 1):
-                    self.cd[i][a_i1[j]] = (a_s1[j + 1] - a_s1[j - 1]) / (
-                            a_s1[- 1] - a_s1[0])
-            if a_s2[0] != a_s2[- 1]:
-                for j in range(1, len(self.dr[i]) - 1):
-                    self.cd[i][a_i2[j]] = self.cd[i][a_i2[j]] + (
-                            a_s2[j + 1] - a_s2[j - 1]) / (
-                                                  a_s2[- 1] - a_s2[0])
-
-    def selection(self):
-        self.slc.clear()
-        self.crowding_distance()
-        num_solution = 0
-        for i in range(len(self.dr)):
-            a_cd = np.array(self.cd[i])
-            a_cdi = np.argsort(a_cd)
-            if num_solution + len(self.dr[i]) <= self.size:
-                for j in range(len(self.dr[i])):
-                    self.slc.append(self.F[self.dr[i][a_cdi[- j - 1]]])
-                num_solution = num_solution + len(self.dr[i])
-            else:
-                for j in range(self.size - num_solution):
-                    self.slc.append(self.F[self.dr[i][a_cdi[- j - 1]]])
-                break
-
-    def crossover(self):
-        self.cso.clear()
-        self.selection()
-        pair = random.sample(range(self.size), self.size)
-        self.cso.extend(self.slc[0:self.size // 2])
-        for l in range(self.size // 2):
-            new_cso = copy.deepcopy(self.slc[pair[l + self.size // 2]])
-            for m in M:
-                new_cso.x[m] = (self.slc[pair[l]].x[m] +
-                                self.slc[pair[l + self.size // 2]].x[m]) // 2
-                new_cso.y[m] = (self.slc[pair[l]].y[m] +
-                                self.slc[pair[l + self.size // 2]].y[m]) // 2
-            for i in I:
-                for v in V:
-                    if J[i][v] != 0:
-                        for j in range(J[i][v]):
-                            for q in range(1, len(VP[v])):
-                                new_cso.rho[i][v][j][q] = \
-                                    (self.slc[pair[l]].rho[i][v][j][q] +
-                                     self.slc[pair[l + self.size // 2]].rho[
-                                         i][v][j][q]) // 2
-                                new_cso.alpha[i][v][j][q] = \
-                                    (self.slc[pair[l]].alpha[i][v][j][q] +
-                                     self.slc[pair[l + self.size // 2]].alpha[
-                                         i][v][j][q]) // 2
-                                new_cso.phi[i][v][j][q] = \
-                                    (self.slc[pair[l]].phi[i][v][j][q] +
-                                     self.slc[pair[l + self.size // 2]].phi[
-                                         i][v][j][q]) // 2
-                                new_cso.beta[i][v][j][q] = \
-                                    (self.slc[pair[l]].beta[i][v][j][q] +
-                                     self.slc[pair[l + self.size // 2]].beta[
-                                         i][v][j][q]) // 2
-            new_cso.pf, new_cso.tlc = new_cso.layout_check()
-            new_cso.rho = new_cso.operation_check()
-            new_cso.alpha, new_cso.phi, new_cso.tpc = \
-                new_cso.machine_configuration_check()
-            new_cso.delta, new_cso.tfc = new_cso.jd()
-            new_cso.beta, new_cso.trc, new_cso.tsc, new_cso.thc = \
-                new_cso.beginning_time_check()
-            new_cso.f1 = new_cso.function1() * new_cso.pf
-            new_cso.f2 = new_cso.function2() * new_cso.pf
-            self.cso.append(new_cso)
-
-    def mutation(self):
-        self.mut.clear()
-        self.crossover()
-        for l in range(len(self.cso)):
-            mutation_prob = random.random()
-            if mutation_prob < 0.1:
-                new_mut = copy.deepcopy(self.cso[l])
-                mutation_loc = random.random()
-                if mutation_loc < 1 / 5:
-                    mut_m = choice(M)
-                    new_mut.x[mut_m] = random.randint(SX[mut_m], BX - SX[mut_m])
-                    new_mut.y[mut_m] = random.randint(SY[mut_m], BY - SY[mut_m])
-                elif 1 / 5 <= mutation_loc < 2 / 5:
-                    mut_i = choice(I)
-                    mut_v = choice(V)
-                    while J[mut_i][mut_v] == 0:
-                        mut_v = choice(V)
-                    mut_j = random.randint(0, J[mut_i][mut_v] - 1)
-                    mut_q = random.randint(0, len(VP[mut_v]) - 1)
-                    new_mut.rho[mut_i][mut_v][mut_j][mut_q] = choice(VP[mut_v])
-                elif 2 / 5 <= mutation_loc < 3 / 5:
-                    mut_i = choice(I)
-                    mut_v = choice(V)
-                    while J[mut_i][mut_v] == 0:
-                        mut_v = choice(V)
-                    mut_j = random.randint(0, J[mut_i][mut_v] - 1)
-                    mut_q = random.randint(0, len(VP[mut_v]) - 1)
-                    new_mut.alpha[mut_i][mut_v][mut_j][mut_q] = choice(M)
-                elif 3 / 5 <= mutation_loc < 4 / 5:
-                    mut_i = choice(I)
-                    mut_v = choice(V)
-                    while J[mut_i][mut_v] == 0:
-                        mut_v = choice(V)
-                    mut_j = random.randint(0, J[mut_i][mut_v] - 1)
-                    mut_q = random.randint(0, len(VP[mut_v]) - 1)
-                    new_mut.phi[mut_i][mut_v][mut_j][mut_q] = \
-                        random.randint(0, G[
-                            new_mut.alpha[mut_i][mut_v][mut_j][mut_q]] - 1)
-                else:
-                    mut_i = choice(I)
-                    mut_v = choice(V)
-                    while J[mut_i][mut_v] == 0:
-                        mut_v = choice(V)
-                    mut_j = random.randint(0, J[mut_i][mut_v] - 1)
-                    mut_q = random.randint(0, len(VP[mut_v]) - 1)
-                    new_mut.beta[mut_i][mut_v][mut_j][mut_q] = \
-                        random.randint(0, new_mut.beta[mut_i][mut_v][mut_j][-1])
-                new_mut.pf, new_mut.tlc = new_mut.layout_check()
-                new_mut.rho = new_mut.operation_check()
-                new_mut.alpha, new_mut.phi, new_mut.tpc = \
-                    new_mut.machine_configuration_check()
-                new_mut.delta, new_mut.tfc = new_mut.jd()
-                new_mut.beta, new_mut.trc, new_mut.tsc, new_mut.thc = \
-                    new_mut.beginning_time_check()
-                new_mut.f1 = new_mut.function1() * new_mut.pf
-                new_mut.f2 = new_mut.function2() * new_mut.pf
-                self.mut.append(new_mut)
-            else:
-                self.mut.append(self.cso[l])
+            dj = []
+            for j in range(len(tmp_ahv[i])):
+                d = 0
+                for j_ in range(len(tmp_ahv[i])):
+                    d = d + math.sqrt(
+                        abs(tmp_ahv[i][j_].f1 - tmp_ahv[i][j].f1) ** 2 +
+                        abs(tmp_ahv[i][j_].f2 - tmp_ahv[i][j].f2) ** 2)
+                dj.append(d)
+            a.append(tmp_ahv[i][dj.index(min(dj))])
+    return a
 
 
 # Main program starts here
-plt_gen = Population()
-plt_gen.fast_non_dominated_sort()
-opt = []
-opt_dup = []
-for v in range(len(plt_gen.dr[0]) - 1):
-    for u in range(v + 1, len(plt_gen.dr[0])):
-        if plt_gen.F[plt_gen.dr[0][u]].f1 == plt_gen.F[plt_gen.dr[0][v]].f1 \
-                and plt_gen.F[plt_gen.dr[0][u]].f2 == plt_gen.F[
-            plt_gen.dr[0][v]].f2:
-            if plt_gen.F[plt_gen.dr[0][u]].x == plt_gen.F[plt_gen.dr[0][v]].x \
-                    and plt_gen.F[plt_gen.dr[0][u]].y == plt_gen.F[
-                plt_gen.dr[0][v]].y:
-                if plt_gen.F[plt_gen.dr[0][u]].rho == \
-                        plt_gen.F[plt_gen.dr[0][v]].rho and \
-                        plt_gen.F[plt_gen.dr[0][u]].alpha == \
-                        plt_gen.F[plt_gen.dr[0][v]].alpha and \
-                        plt_gen.F[plt_gen.dr[0][u]].phi == \
-                        plt_gen.F[plt_gen.dr[0][v]].phi and \
-                        plt_gen.F[plt_gen.dr[0][u]].beta == \
-                        plt_gen.F[plt_gen.dr[0][v]].beta:
-                    opt_dup.append(u)
-for i in range(len(plt_gen.dr[0])):
-    if plt_gen.F[plt_gen.dr[0][i]].pf == 1:
-        if i not in opt_dup:
-            opt.append(plt_gen.F[plt_gen.dr[0][i]])
-current_gen = 0
-gen_limit = 1000
-opt_elitist = []
-opt_ndp = []
-while current_gen < gen_limit:
-    plt_gen.mutation()
-    if current_gen > 0:
-        plt_gen.parent[0] = copy.deepcopy(plt_gen.parent[1])
-    plt_gen.parent[1] = copy.deepcopy(plt_gen.mut)
-    opt_elitist = opt + plt_gen.parent[1]
-    opt_dup.clear()
-    for v in range(len(opt_elitist) - 1):
-        for u in range(v + 1, len(opt_elitist)):
-            if opt_elitist[u].f1 == opt_elitist[v].f1 and \
-                    opt_elitist[u].f2 == opt_elitist[v].f2:
-                if opt_elitist[u].x == opt_elitist[v].x and \
-                        opt_elitist[u].y == opt_elitist[v].y:
-                    if opt_elitist[u].rho == opt_elitist[v].rho and \
-                            opt_elitist[u].alpha == opt_elitist[v].alpha and \
-                            opt_elitist[u].phi == opt_elitist[v].phi and \
-                            opt_elitist[u].beta == opt_elitist[v].beta:
-                        opt_dup.append(u)
-    opt_ndp.clear()
-    for i in range(len(opt_elitist)):
-        if opt_elitist[i].pf == 1:
-            if i not in opt_dup:
-                opt_ndp.append(opt_elitist[i])
-    nds = [1 for i in range(len(opt_ndp))]
-    nv1 = [opt_ndp[i].f1 for i in range(len(opt_ndp))]
-    nv2 = [opt_ndp[i].f2 for i in range(len(opt_ndp))]
-    for v in range(len(opt_ndp) - 1):
-        if nds[v] == 0:
+T_max = 100
+T_min = 1
+itr = 100
+cooling_rate = 0.99
+temp = T_max
+HL = 11
+SL = 20
+# Initialize the Archive
+init_ahv = []
+init_slt = Solution()
+init_ahv.append(init_slt)
+while len(init_ahv) < 2:
+    init_slt = Solution()
+    if init_slt.f1 < init_ahv[0].f1 and init_slt.f2 > init_ahv[0].f2:
+        init_ahv.append(init_slt)
+    elif init_slt.f1 > init_ahv[0].f1 and init_slt.f2 < init_ahv[0].f2:
+        init_ahv.append(init_slt)
+    elif init_slt.f1 == init_ahv[0].f1 and init_slt.f2 == init_ahv[0].f2:
+        if init_slt.x != init_ahv[0].x or init_slt.y != init_ahv[0].y or \
+                init_slt.rho != init_ahv[0].rho or \
+                init_slt.alpha != init_ahv[0].alpha or \
+                init_slt.phi != init_ahv[0].phi or \
+                init_slt.beta != init_ahv[0].beta:
+            init_ahv.append(init_slt)
+# Iteration
+current_pt = copy.deepcopy(choice(init_ahv))
+ahv = init_ahv
+ahv_f1_max = max([ahv[i].f1 for i in range(len(ahv))])
+ahv_f1_min = min([ahv[i].f1 for i in range(len(ahv))])
+ahv_f2_max = max([ahv[i].f2 for i in range(len(ahv))])
+ahv_f2_min = min([ahv[i].f2 for i in range(len(ahv))])
+while temp > T_min:
+    for i in range(itr):
+        new_pt = Solution()
+        new_loc = random.random()
+        if new_loc < 1 / 5:
+            new_m = choice(M)
+            new_pt.x[new_m] = random.randint(SX[new_m], BX - SX[new_m])
+            new_pt.y[new_m] = random.randint(SY[new_m], BY - SY[new_m])
+        elif 1 / 5 <= new_loc < 2 / 5:
+            new_i = choice(I)
+            new_v = choice(V)
+            while J[new_i][new_v] == 0:
+                new_v = choice(V)
+            new_j = random.randint(0, J[new_i][new_v] - 1)
+            new_q = random.randint(0, len(VP[new_v]) - 1)
+            new_pt.rho[new_i][new_v][new_j][new_q] = choice(VP[new_v])
+        elif 2 / 5 <= new_loc < 3 / 5:
+            new_i = choice(I)
+            new_v = choice(V)
+            while J[new_i][new_v] == 0:
+                new_v = choice(V)
+            new_j = random.randint(0, J[new_i][new_v] - 1)
+            new_q = random.randint(0, len(VP[new_v]) - 1)
+            new_pt.alpha[new_i][new_v][new_j][new_q] = choice(M)
+        elif 3 / 5 <= new_loc < 4 / 5:
+            new_i = choice(I)
+            new_v = choice(V)
+            while J[new_i][new_v] == 0:
+                new_v = choice(V)
+            new_j = random.randint(0, J[new_i][new_v] - 1)
+            new_q = random.randint(0, len(VP[new_v]) - 1)
+            new_pt.phi[new_i][new_v][new_j][new_q] = \
+                random.randint(0, G[
+                    new_pt.alpha[new_i][new_v][new_j][new_q]] - 1)
+        else:
+            new_i = choice(I)
+            new_v = choice(V)
+            while J[new_i][new_v] == 0:
+                new_v = choice(V)
+            new_j = random.randint(0, J[new_i][new_v] - 1)
+            new_q = random.randint(0, len(VP[new_v]) - 1)
+            new_pt.beta[new_i][new_v][new_j][new_q] = \
+                random.randint(0, new_pt.beta[new_i][new_v][new_j][-1])
+        new_pt.pf, new_pt.tlc = new_pt.layout_check()
+        new_pt.rho = new_pt.operation_check()
+        new_pt.alpha, new_pt.phi, new_pt.tpc = \
+            new_pt.machine_configuration_check()
+        new_pt.delta, new_pt.tfc = new_pt.jd()
+        new_pt.beta, new_pt.trc, new_pt.tsc, new_pt.thc = \
+            new_pt.beginning_time_check()
+        new_pt.f1 = new_pt.function1() * new_pt.pf
+        new_pt.f2 = new_pt.function2() * new_pt.pf
+        if new_pt.pf != 1:
             continue
-        for u in range(v, len(opt_ndp)):
-            if nds[u] == 0:
-                continue
-            if nv1[u] < nv1[v] and nv2[u] < nv2[v] or nv1[u] == nv1[v] and \
-                    nv2[u] < nv2[v] or nv1[u] < nv1[v] and nv2[u] == nv2[v]:
-                nds[v] = 0
-            elif nv1[v] < nv1[u] and nv2[v] < nv2[u] or nv1[v] == nv1[u] and \
-                    nv2[v] < nv2[u] or nv1[v] < nv1[u] and nv2[v] == nv2[u]:
-                nds[u] = 0
-    opt.clear()
-    for v in range(len(opt_ndp)):
-        if nds[v] == 1:
-            opt.append(opt_ndp[v])
-    current_gen = current_gen + 1
-for j in range(len(opt)):
-    print(opt[j].f1, opt[j].f2)
-    print(opt[j].x, opt[j].y)
-    print(opt[j].rho)
-    print(opt[j].alpha)
-    print(opt[j].phi)
-    print(opt[j].beta)
+        R1 = max(ahv_f1_max, current_pt.f1, new_pt.f1) - min(
+            ahv_f1_min, current_pt.f1, new_pt.f1)
+        R2 = max(ahv_f2_max, current_pt.f2, new_pt.f2) - min(
+            ahv_f2_min, current_pt.f2, new_pt.f2)
+        if (current_pt.f1 < new_pt.f1 and current_pt.f2 < new_pt.f2) or \
+                (current_pt.f1 < new_pt.f1 and current_pt.f2 == new_pt.f2) or \
+                (current_pt.f1 == new_pt.f1 and current_pt.f2 < new_pt.f2):
+            dom_ttl = 0
+            k = 0
+            for j in range(len(ahv)):
+                if (ahv[j].f1 < new_pt.f1 and ahv[j].f2 < new_pt.f2) or \
+                        (ahv[j].f1 < new_pt.f1 and ahv[j].f2 == new_pt.f2) or \
+                        (ahv[j].f1 == new_pt.f1 and ahv[j].f2 < new_pt.f2):
+                    dom_ttl = dom_ttl + \
+                              domination_amount(ahv[j], new_pt, R1, R2)
+                    k = k + 1
+            dom_avg = (dom_ttl +
+                       domination_amount(current_pt, new_pt, R1, R2)) / (k + 1)
+            prob = 1 / (1 + np.exp(dom_avg * temp))
+            apt_prb = random.random()
+            if apt_prb <= prob:
+                current_pt = new_pt
+        elif (current_pt.f1 < new_pt.f1 and current_pt.f2 > new_pt.f2) or \
+                (current_pt.f1 > new_pt.f1 and current_pt.f2 < new_pt.f2):
+            k1 = 0
+            k2 = 0
+            k3 = 0
+            dom_ttl = 0
+            del_list = []
+            for j in range(len(ahv)):
+                if (ahv[j].f1 < new_pt.f1 and ahv[j].f2 < new_pt.f2) or \
+                        (ahv[j].f1 < new_pt.f1 and ahv[j].f2 == new_pt.f2) or \
+                        (ahv[j].f1 == new_pt.f1 and ahv[j].f2 < new_pt.f2):
+                    k1 = k1 + 1
+                    dom_ttl = dom_ttl + \
+                              domination_amount(ahv[j], new_pt, R1, R2)
+                elif (ahv[j].f1 < new_pt.f1 and ahv[j].f2 > new_pt.f2) or \
+                        (ahv[j].f1 > new_pt.f1 and ahv[j].f2 < new_pt.f2):
+                    k2 = k2 + 1
+                elif (new_pt.f1 < ahv[j].f1 and new_pt.f2 < ahv[j].f2) or \
+                        (new_pt.f1 < ahv[j].f1 and new_pt.f2 == ahv[j].f2) or \
+                        (new_pt.f1 == ahv[j].f1 and new_pt.f2 < ahv[j].f2):
+                    k3 = k3 + 1
+                    del_list.append(j)
+            if k1 >= 1:
+                dom_avg = dom_ttl / k1
+                prob = 1 / (1 + np.exp(dom_avg * temp))
+                apt_prb = random.random()
+                if apt_prb <= prob:
+                    current_pt = new_pt
+            elif k2 == len(ahv):
+                current_pt = new_pt
+                if new_pt.pf == 1:
+                    ahv.append(new_pt)
+                    if len(ahv) > SL:
+                        single_linkage_clustering(ahv)
+            elif k3 >= 1:
+                current_pt = new_pt
+                ahv = [ahv[j] for j in range(len(ahv)) if j not in del_list]
+        elif (new_pt.f1 < current_pt.f1 and new_pt.f2 < current_pt.f2) or \
+                (new_pt.f1 < current_pt.f1 and new_pt.f2 == current_pt.f2) or \
+                (new_pt.f1 == current_pt.f1 and new_pt.f2 < current_pt.f2):
+            k1 = 0
+            k2 = 0
+            k3 = 0
+            dom_min = 0
+            del_list = []
+            for j in range(len(ahv)):
+                if (ahv[j].f1 < new_pt.f1 and ahv[j].f2 < new_pt.f2) or \
+                        (ahv[j].f1 < new_pt.f1 and ahv[j].f2 == new_pt.f2) or \
+                        (ahv[j].f1 == new_pt.f1 and ahv[j].f2 < new_pt.f2):
+                    k1 = k1 + 1
+                    if k1 == 1 or dom_min > domination_amount(ahv[j], new_pt,
+                                                              R1, R2):
+                        dom_min = domination_amount(ahv[j], new_pt, R1, R2)
+                elif (ahv[j].f1 < new_pt.f1 and ahv[j].f2 > new_pt.f2) or \
+                        (ahv[j].f1 > new_pt.f1 and ahv[j].f2 < new_pt.f2):
+                    k2 = k2 + 1
+                elif (new_pt.f1 < ahv[j].f1 and new_pt.f2 < ahv[j].f2) or \
+                        (new_pt.f1 < ahv[j].f1 and new_pt.f2 == ahv[j].f2) or \
+                        (new_pt.f1 == ahv[j].f1 and new_pt.f2 < ahv[j].f2):
+                    k3 = k3 + 1
+                    del_list.append(j)
+            if k1 >= 1:
+                prob = 1 / (1 + math.exp(- dom_min))
+                if apt_prb <= prob:
+                    current_pt = new_pt
+            elif k2 == len(ahv):
+                if current_pt in ahv:
+                    ahv.remove(current_pt)
+                current_pt = new_pt
+                if new_pt.pf == 1:
+                    ahv.append(new_pt)
+                    if len(ahv) > SL:
+                        single_linkage_clustering(ahv)
+            elif k3 >= 1:
+                current_pt = new_pt
+                ahv = [ahv[j] for j in range(len(ahv)) if j not in del_list]
+    temp = cooling_rate * temp
+if len(ahv) > SL:
+    single_linkage_clustering(ahv)
+for i in range(len(ahv)):
+    print(ahv[i].f1, ahv[i].f2)
+    print(ahv[i].x, ahv[i].y)
+    print(ahv[i].rho)
+    print(ahv[i].alpha)
+    print(ahv[i].phi)
+    print(ahv[i].beta)
     print('')
 p1 = time.process_time()
 print(p1 - p0)
