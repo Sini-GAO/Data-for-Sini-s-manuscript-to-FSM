@@ -1,6 +1,6 @@
 # IJPR
 
-This is the programming document for the large numerical experiment in Sini's manuscript submitted to IJPR.
+This is the document in Sini's manuscript submitted to IJPR.
 
 It has: 
        (1) Approximate Pareto-optimal solutions files for the large numerical experiment;
