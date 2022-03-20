@@ -1,6 +1,6 @@
-# IJPR
+# JIM
 
-This is the programming document for the large numerical experiment in Sini's manuscript submitted to IJPR.
+This is the programming document for the large numerical experiment in Sini's manuscript submitted to JIM.
 
 It has: 
        (1) AMOSA code for the large numerical example (shared after the manuscript is accepted);
