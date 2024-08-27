@@ -1,6 +1,6 @@
-# JIM
+# FSM
 
-This is the programming document for the small numerical experiment in Sini's manuscript submitted to JIM.
+This is the programming document for the small numerical experiment in Sini's manuscript submitted to FSM.
 
 It has: 
        (1) AMOSA code for the small numerical example (shared after the manuscript is accepted);
