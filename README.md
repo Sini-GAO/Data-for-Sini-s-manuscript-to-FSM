@@ -1,6 +1,6 @@
-# FMS
+# FSM
 
-This is the document in Sini's manuscript submitted to FMS. There are four branches in this project: main, DOE, Programming-for-large-numerical-example and Programming-for-small-numerical-example. 
+This is the document in Sini's manuscript submitted to FSM. There are four branches in this project: main, DOE, Programming-for-large-numerical-example and Programming-for-small-numerical-example. 
 
 It has: 
        (1) Approximate Pareto-optimal solutions files for the large numerical experiment (in Branch 'Programming-for-large-numerical-example');
