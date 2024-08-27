@@ -1,6 +1,6 @@
-# JIM
+# FSM
 
-This is the document for DOE of the small numerical experiment conducted by Minitab in Sini's manuscript submitted to JIM.
+This is the document for DOE of the small numerical experiment conducted by Minitab in Sini's manuscript submitted to FSM.
 
 It has: 
        (1) DOE file for AMOSA;
