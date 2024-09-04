@@ -1,6 +1,6 @@
-# FSM
+# IJCIM
 
-This is the programming document for the small numerical experiment in Sini's manuscript submitted to FSM.
+This is the programming document for the small numerical experiment in Sini's manuscript submitted to IJCIM.
 
 It has: 
        (1) AMOSA code for the small numerical example (shared after the manuscript is accepted);
